@@ -1,4 +1,5 @@
 import os
+import re
 from dotenv import load_dotenv
 from tools.text_tools import parse_text
 from tools.pdf_tools import parse_pdf
@@ -33,6 +34,29 @@ def handle_file_upload(file_path, file_name, file_type):
             # Multimodal approach: extract OCR text and a descriptive Vision caption
             ocr_text = perform_ocr(file_path)
             vision_caption = analyze_image(file_path, prompt="Describe the image, extracting meaningful details and transcribing any visible large text.")
+            
+            # Generate 5-word semantic filename
+            name_prompt = f"Convert this image description into exactly 5 descriptive words separated by underscores to be used as a filename. Respond ONLY with those 5 words, nothing else. Example: ancient_greek_statue_art_marble \n\nDescription: {vision_caption}"
+            generated_name = query_llm([{"role": "user", "content": name_prompt}]).strip().lower()
+            generated_name = re.sub(r'[^a-z0-9_]', '', generated_name.replace(' ', '_'))[:50]
+            
+            if not generated_name or len(generated_name) < 3:
+                generated_name = "uploaded_image"
+                
+            new_file_name = f"{generated_name}.jpg"
+            new_file_path = os.path.join(os.path.dirname(file_path), new_file_name)
+            
+            # Ensure unique filename
+            counter = 1
+            while os.path.exists(new_file_path):
+                new_file_name = f"{generated_name}_{counter}.jpg"
+                new_file_path = os.path.join(os.path.dirname(file_path), new_file_name)
+                counter += 1
+                
+            os.rename(file_path, new_file_path)
+            file_path = new_file_path
+            file_name = new_file_name
+            metadata["source"] = file_name
             
             extracted_text = f"Image Name: {file_name}\n"
             extracted_text += f"---\nOCR Transcription:\n{ocr_text}\n"
@@ -157,7 +181,9 @@ def process_user_query(user_query):
     context_str = "\n\n".join(retrieved_context) if retrieved_context else ""
     
     import datetime
-    current_time = datetime.datetime.now().strftime("%Y-%m-%d %I:%M %p")
+    current_time_obj = datetime.datetime.now()
+    current_time = current_time_obj.strftime("%Y-%m-%d %I:%M %p")
+    day_of_week = current_time_obj.strftime("%A")
     
     # Read actual files in directory to give AI true context of available files
     current_files = []
@@ -169,14 +195,18 @@ def process_user_query(user_query):
     system_msg = {
         "role": "system",
         "content": (
+            "Your name is Boo"
             "You are an intelligent multimodal local assistant on Telegram named 'Local AI Agent'.\n"
-            f"The current local date and time is: {current_time}.\n"
+            f"The current time is: {current_time}.\n"
+            f"Today is {day_of_week}.\n"
             "The user talking to you is named 'abey'. Always address him naturally.\n\n"
-            "You have full permissions over the 'downloads/' folder on your host machine to create, send, delete, or search files. "
+            "You have full permissions over the 'downloads/' folder on your host machine to create, send, delete, or search files.\n"
             "If the user asks you to create a file (e.g., 'write a poem in poem.txt'), reply ONLY with the content meant for that file.\n"
-            "If the user asks how to share/get an image or file, tell them to literally type 'share [filename]' to trigger the backend system correctly (e.g. 'share photo.jpg'). Don't offer them bash commands like Tesseract.\n"
             f"\n--- Currently Available Files in your 'downloads/' Folder ---\n{file_list_str}\n"
-            "\nIf the user asks questions about past files, refer to the provided 'Context retrieved from memory'."
+            "\nIf the user asks you to send or share an existing file from the folder, reply with ONLY this exact format: [SHARE: filename.ext]\n"
+            "If the user asks you to delete a file (e.g. 'delete it', 'remove the image'), reply with ONLY this exact format: [DELETE: filename.ext]\n"
+            "Do not add any other conversational text when sharing or deleting an existing file.\n"
+            "If they ask questions about past files, refer to the provided 'Context retrieved from memory'."
         )
     }
     
@@ -204,9 +234,34 @@ def process_user_query(user_query):
     chat_history.append({"role": "user", "content": user_query})
     chat_history.append({"role": "assistant", "content": response})
     
-    # 4. Check if the user wanted a file to be returned
+    # 4. Check if the LLM intelligently called the [SHARE: filename.ext] syntax
+    share_match = re.search(r'\[SHARE:\s*(.+?)\]', response)
+    if share_match:
+        file_name = share_match.group(1).strip()
+        file_path = os.path.join("downloads", file_name)
+        if os.path.exists(file_path):
+            return f"Here is the file you requested: {file_name}", file_path
+        else:
+            return f"I tried to share {file_name}, but I could not find it in my folder.", None
+            
+    # 4.5 Check if the LLM intelligently handled a pronoun deletion [DELETE: filename.ext] syntax
+    delete_match = re.search(r'\[DELETE:\s*(.+?)\]', response)
+    if delete_match:
+        file_name = delete_match.group(1).strip()
+        file_path = os.path.join("downloads", file_name)
+        file_deleted = False
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            file_deleted = True
+            
+        db_deleted = delete_by_source(file_name)
+        if file_deleted or db_deleted:
+            return f"Successfully deleted `{file_name}` from disk and AI memory.", None
+        else:
+            return f"I tried to delete {file_name}, but I could not find it in my folder.", None
+            
+    # 5. Check if the user wanted a NEW file to be created and returned
     # Crude implementation: if user says "write in poem.txt", try to parse a filename
-    import re
     file_intent = re.search(r'(?:send|write|save).*? ([\w-]+\.txt)', user_query.lower())
     if file_intent:
         file_name = file_intent.group(1)

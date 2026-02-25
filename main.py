@@ -17,6 +17,10 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+# Silence the noisy auto-polling HTTP logs so your terminal stays clean
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("telegram.ext").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -91,5 +95,8 @@ if __name__ == '__main__':
     application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     
-    print("Agent is actively polling for messages...")
+    print("\n" + "="*60)
+    print(" 🚀 LOCAL AI TELEGRAM AGENT IS SUCCESSFULLY LOADED! 🚀 ")
+    print("         Waiting for your messages on Telegram...        ")
+    print("="*60 + "\n")
     application.run_polling()
