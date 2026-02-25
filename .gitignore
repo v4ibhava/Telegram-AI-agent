@@ -1,0 +1,46 @@
+# Environment variables
+.env
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Vector Database Storage (Local ChromaDB)
+chroma_db/
+.chroma/
+
+# IDE configurations
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# MacOS
+.DS_Store
+
+# Temporary files
+downloads/*
+!downloads/.gitkeep 
