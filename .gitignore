@@ -1,6 +1,12 @@
 # Environment variables
 .env
 
+# Downloaded models (multi-GB GGUF files)
+models/
+
+# User-specific dynamic rules
+bot_rules.txt
+
 # Virtual Environment
 .venv/
 venv/

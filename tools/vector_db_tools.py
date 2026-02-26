@@ -50,3 +50,17 @@ def delete_by_source(source_name):
     if not collection: return False
     collection.delete(where={"source": source_name})
     return True
+
+def wipe_all_memory():
+    """Completely wipes the entire vector memory database. (NUCLEAR DELETE)"""
+    global collection
+    try:
+        if collection:
+            count = collection.count()
+            chroma_client.delete_collection(name="agent_memory")
+            collection = chroma_client.get_or_create_collection(name="agent_memory")
+            return count
+        return 0
+    except Exception as e:
+        print(f"Error wiping memory: {e}")
+        return 0

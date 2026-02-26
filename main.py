@@ -4,7 +4,7 @@ import asyncio
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-from orchestrator import handle_file_upload, process_user_query
+from orchestrator import handle_file_upload, process_user_query, delete_all_memory
 
 # Load .env variables
 load_dotenv()
@@ -36,16 +36,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(welcome_text)
 
+async def delete_memory(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Wipes all bot memory: chat history, vector DB, files, and rules."""
+    logger.info("User triggered /delete_memory - wiping all memory")
+    msg = await update.message.reply_text("Wiping all memory... Please wait.")
+    result = await asyncio.to_thread(delete_all_memory)
+    await msg.edit_text(result)
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Sends normal chatter to the RAG orchestrator."""
     user_query = update.message.text
-    logger.info(f"Received query: {user_query}")
+    # Get the user's display name from Telegram
+    user = update.message.from_user
+    user_name = user.first_name or user.username or "cutie"
+    logger.info(f"Received query from {user_name}: {user_query}")
     
     await update.message.chat.send_action(action="typing")
-    response, out_file_path = await asyncio.to_thread(process_user_query, user_query)
+    response, out_file_path = await asyncio.to_thread(process_user_query, user_query, user_name)
     
     if out_file_path and os.path.exists(out_file_path):
-        await update.message.reply_document(document=open(out_file_path, 'rb'), caption=response)
+        # Prevent "File must be non-empty" errors and preview images
+        if out_file_path.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
+            await update.message.reply_photo(photo=open(out_file_path, 'rb'), caption=response)
+        else:
+            await update.message.reply_document(document=open(out_file_path, 'rb'), caption=response)
     else:
         await update.message.reply_text(response)
 
@@ -85,12 +99,18 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 if __name__ == '__main__':
     print("--- Local AI Telegram Agent initializing ---")
+    
+    # Print GPU acceleration status
+    from tools.gpu_config import print_gpu_status
+    print_gpu_status()
+    
     if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE" or not BOT_TOKEN:
         print("WARNING: Please set TELEGRAM_BOT_TOKEN in the .env file.")
         
     application = ApplicationBuilder().token(BOT_TOKEN).build()
     
     application.add_handler(CommandHandler('start', start))
+    application.add_handler(CommandHandler('delete_memory', delete_memory))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))

@@ -5,3 +5,7 @@ Pillow>=10.0.0
 sentence-transformers>=2.2.2
 chromadb>=0.4.0
 python-dotenv>=1.0.0
+reportlab
+fpdf
+llama-cpp-python>=0.2.77
+huggingface-hub>=0.23.0
